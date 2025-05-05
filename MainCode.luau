@@ -174,12 +174,14 @@ local function ResetHumanoidToDefault(Humanoid : Humanoid)
 
 	Humanoid.WalkSpeed = NormalWalkSpeed
 	Humanoid.JumpPower = NormalJumpPower
+	Humanoid.AutoRotate = true
 
 end
 
 --Set humanoid settings
 local function ChangeHumanoid(Humanoid : Humanoid)
 	
+	Humanoid.AutoRotate = false
 	Humanoid.WalkSpeed = 0
 	Humanoid.JumpPower = 0
 	
