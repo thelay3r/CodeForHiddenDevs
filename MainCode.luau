@@ -1,294 +1,356 @@
---Services
-local UserInputService = game:GetService("UserInputService")
+--Rbx Services
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 
---Player Components
-local Player = game.Players.LocalPlayer
-local Character = Player.Character or Player.CharacterAdded:Wait()
---
+--PlayerComponents
+local Player : Player = game.Players.LocalPlayer
+local Character : Model = Player.Character or Player.CharacterAdded:Wait()
+--Set PrimaryPart to HumanoidRootPart cuz in R6 Default RootPart it`s Head
+Character.PrimaryPart = Character:FindFirstChild("HumanoidRootPart")
+
+local RootPart : BasePart = Character.PrimaryPart
+local Torso = Character:WaitForChild("Torso")
+
+local Humanoid : Humanoid = Character:FindFirstChildOfClass("Humanoid")
+local Aniamtor : Animator = Humanoid:FindFirstChildOfClass("Animator")
 
 
-local KeyCode = Enum.KeyCode.Q -- KeyBind
-
-local Assets = script:WaitForChild("Assets") -- Assets Folder
-
-local CameraShaker = require(script.CameraShaker) -- OpenSource ShakeModule
-local Camera = workspace.CurrentCamera -- Main Camera
-
-local debounce = false -- CoolDown on Button
+local Mouse = Player:GetMouse() -- PlayerMouse
 
 
-local ColorCorrection = Lighting.ColorCorrection
 
-local Rightoffset = 10 -- Offset on CFrame
-local LookOffset = 5 --  Offset on CFrame
+local PlayerCamera : Camera = workspace.CurrentCamera -- CurrentPlayerCamera
 
 
---Gui Components 
-local PlayerGUI = Player.PlayerGui
-local Hud = PlayerGUI.Hud
-local Eyes = Hud.Eyes
---
+--Properties
+local DefaultSpeed : number = 16
+local UpSpeed : number = 24
 
---Settings For humanoid
-local NormalWalkSpeed = 16
-local NormalJumpPower = 50
---
+local BobbingMulty : number = 10
+local BobbingCFrame : CFrame = CFrame.new()
 
---Setup CameraShake
-local CameraModule = CameraShaker.new(Enum.RenderPriority.Camera.Value +1,function(Cframe)
-	Camera.CFrame *= Cframe
-end)
-CameraModule:Start()
---
+local IsRunning : boolean = false
 
 
---Change transparency 
-local function OpenEyes()
-	local _Time = 1
-	local EyesTween = TweenService:Create(Eyes,TweenInfo.new(_Time,Enum.EasingStyle.Sine),
-		{
-			BackgroundTransparency = 0
-		})
-	EyesTween:Play()
-	
+local Rocket = ReplicatedStorage.Rocket
+local offset = Vector3.new(250,0,0)
+
+local SPEED = 600
+local Itteration = 40
+
+local Radius = 3
+local KnivesCount = 20
+
+--Folder for anims
+local AnimationFolder : Folder = script.Anims
+
+--KeyCodes
+local KeyCodes = 
+	{
+		["Run"] = Enum.KeyCode.X;
+		["RocketSpam"] = Enum.KeyCode.Q;
+		["Fan of Knives"] = Enum.KeyCode.V;
+	}
+
+
+--Cache
+local Cache = {}
+local Tracks = {}
+
+
+
+local function CheckOnAnimationTrack(TrackName) : AnimationTrack
+	return Tracks[TrackName]
 end
 
---Reset ColorCorrection to default
-local function ResetSetColorCorrection()
-
-	local TweenTime = 1
-	local CorrectionTween = TweenService:Create(ColorCorrection,TweenInfo.new(TweenTime,Enum.EasingStyle.Sine)
-		,{
-			Saturation = 0;
-			TintColor = Color3.fromRGB(255, 255, 255)
-		})
-	CorrectionTween:Play()
-
+local function CheckOnAnimationRunning(TrackName) : boolean
+	local track = CheckOnAnimationTrack(TrackName)
+	if track then
+		return track.IsPlaying
+	end
+	return false
 end
 
 
---Set ColorCorrection
-local function SetColorCorrection()
-	
-	local TweenTime = 1
-	local CorrectionTween = TweenService:Create(ColorCorrection,TweenInfo.new(TweenTime,Enum.EasingStyle.Sine)
-		,{
-			Saturation = 1;
-			TintColor = Color3.fromRGB(233, 213, 255)
-		})
-	CorrectionTween:Play()
-	
+local BiezeModule = {}
+
+local function lerp(a,b,t)
+
+
+
+	return a+(b-a) * t
 end
---Set transparency to background
-local function CloseEyes()
-	local _Time = 1
-	local EyesTween = TweenService:Create(Eyes,TweenInfo.new(_Time,Enum.EasingStyle.Sine),
-		{
-			BackgroundTransparency =1
-		})
-	EyesTween:Play()
+
+function BiezeModule.elapsedTime(t)
+	return 1-(1-2*t)^2
+end
+
+function BiezeModule.quadraticBieze(a,b,c,t)
+
+	local dot1 = lerp(a,b,t)
+	local dot2 = lerp(b,c,t)
+	local finaledot = lerp(dot1,dot2,t)	
+
+	return finaledot
 
 end
 
---Enable/Disable vfx 
-local function ChangeVFXStatus(object : BasePart,status : boolean)
-	
+local function PlayVFX(object : BasePart)
+
 	for _,v in pairs(object:GetDescendants()) do
 		if v:IsA("ParticleEmitter") then
-			v.Enabled = status
+			v:Emit(v:GetAttribute("EmitCount"))
 		end
-		if v:IsA("Beam") then
-			v.Enabled = status
+	end
+
+end
+
+
+--Functional map for abilities
+local Map = 
+	{
+		[Enum.KeyCode.X] = function(status : boolean)
+			if not status then return end
+
+			if IsRunning then
+				Humanoid.WalkSpeed = DefaultSpeed
+				
+				if Cache["Run"] then
+					Cache["Run"]:Disconnect()
+					if CheckOnAnimationRunning("RunAnimation") then
+						local track = CheckOnAnimationTrack("RunAnimation")
+						track:Stop()
+						Tracks["RunAnimation"] = nil
+					end
+				end
+				
+			else
+				Humanoid.WalkSpeed = UpSpeed
+				
+				Cache["Run"] = RunService.Heartbeat:Connect(function()
+					local IsMove : boolean = Humanoid.MoveDirection.Magnitude > .01
+
+					
+					if IsMove then
+						if not CheckOnAnimationRunning("RunAnimation") then
+							Tracks["RunAnimation"] = Aniamtor:LoadAnimation(AnimationFolder["Run"])
+							Tracks["RunAnimation"]:Play()
+						end
+					else
+						if CheckOnAnimationRunning("RunAnimation") then
+							Tracks["RunAnimation"]:Stop()
+						end
+					end
+					
+				end)
+				
+			end
+			
+			IsRunning = not IsRunning
+		end,
+		
+		[Enum.KeyCode.Q] = function(status : boolean)
+			if not status then return end
+			
+			for i=1,10 do
+
+				task.spawn(function()
+
+					--Getting MousePos + offset
+					local MousePos = Mouse.Hit.Position + CFrame.new(math.random(-i,i)*25,0,0).Position
+					--Clone Rocket
+					local FausClone = Rocket:Clone()
+				
+					local magnitude = (Character.PrimaryPart.Position - MousePos).Magnitude
+
+					
+					FausClone.Parent = workspace
+					FausClone.PrimaryPart.Anchored = true
+
+					local dot1 = Character.PrimaryPart.CFrame.LookVector  * -10
+					local dot2 = MousePos + ((offset * Vector3.new(0,1,1)) + Vector3.new(0,25,0))
+
+					local targetpos = BiezeModule.quadraticBieze(dot1,dot2,MousePos,1)
+					local nextPos = BiezeModule.quadraticBieze(dot1,dot2,MousePos,1)
+
+
+					FausClone:PivotTo(CFrame.new(dot1))
+
+					local seed = math.random(0,10000)
+					local freq = math.random(1,255)
+					local amp = 5
+					-- Bieze Math
+					for i=1,Itteration do
+						local t = magnitude/SPEED/Itteration
+						local elapsed_time = BiezeModule.elapsedTime(t)
+						
+						--The Perlin noise
+						local noise = Vector3.new(
+							elapsed_time*amp*math.noise(0,t*freq,seed),
+							elapsed_time*amp*math.noise(t*freq,0,seed),
+							0)
+						--Calculate targetpos
+						targetpos = BiezeModule.quadraticBieze(dot1,dot2,MousePos,i/Itteration)
+						nextPos = BiezeModule.quadraticBieze(dot1,dot2,MousePos,(i+1)/Itteration)
+
+						local bizCFrame = CFrame.new(targetpos,nextPos)
+						local pos = targetpos + bizCFrame.Rotation * noise
+						--Move Rocket with TweenService
+						TweenService:Create(FausClone.PrimaryPart, TweenInfo.new(t,Enum.EasingStyle.Linear),{CFrame = CFrame.new(pos,nextPos)* CFrame.Angles(math.rad(-90),0,0)}):Play()
+						task.wait(.01)
+					end
+					--Set Rocket Transparency to 1
+					for _,v in pairs(FausClone:GetDescendants()) do
+						if v:IsA("BasePart") then
+							v.Transparency = 1
+						end
+					end
+					--Emit Vfx
+					PlayVFX(FausClone)
+				end)
+				task.wait()
+			end
+			
+		end,
+		[Enum.KeyCode.V] = function(status : boolean)
+			if not status then return end
+			
+
+			local vfxPart = ReplicatedStorage.VFX.VFXPart:Clone()
+			vfxPart.Parent = workspace
+			vfxPart:PivotTo(Character.PrimaryPart.CFrame + Character.PrimaryPart.CFrame.UpVector*-2)
+			
+			
+			--Circle Spawn knifes cycle
+			for x=1,360,360/KnivesCount do
+				task.spawn(function()
+
+					--CFrame`s
+					local centerCFrame = (Character.PrimaryPart.CFrame + Character.PrimaryPart.CFrame.UpVector * -5).Position
+					local MidlePosition = ((Character.PrimaryPart.CFrame + Character.PrimaryPart.CFrame.UpVector * 1555) * CFrame.Angles(0,math.rad(x),0) * CFrame.new(0,0,-Radius)).Position
+					local EndPosition = (MidlePosition - Vector3.new(0,15,-x/5))
+					
+					--Clonned Rocket
+					local FausClone = ReplicatedStorage.Fau2:Clone()
+					FausClone.Parent = workspace
+					FausClone:PivotTo(CFrame.new(centerCFrame,EndPosition) * CFrame.Angles(math.rad(90),0,0))
+					--Biezer Math
+					for i=1,Itteration do
+
+						centerCFrame = (Character.PrimaryPart.CFrame + Character.PrimaryPart.CFrame.UpVector * -2).Position
+						MidlePosition = ((Character.PrimaryPart.CFrame + Character.PrimaryPart.CFrame.UpVector * 15) * CFrame.Angles(0,math.rad(x),0) * CFrame.new(0,0,Radius + (i/15))).Position			
+						EndPosition = ((Character.PrimaryPart.CFrame + Character.PrimaryPart.CFrame.UpVector * -5) * CFrame.Angles(0,math.rad(x),0) * CFrame.new(0,0,Radius + (i/5))).Position
+
+
+						local t = i/Itteration
+						local t1 = (i+1)/Itteration
+						local targetPos = CFrame.new(BiezeModule.quadraticBieze(centerCFrame,MidlePosition,EndPosition,t),BiezeModule.quadraticBieze(centerCFrame,MidlePosition,EndPosition,t1)) * CFrame.Angles(math.rad(-90),0,0)
+
+						FausClone:PivotTo(targetPos * CFrame.Angles(0,math.rad(i),0))
+
+						task.wait(.01)
+					end
+				end)
+
+			end
+			--Emit VFX
+			PlayVFX(vfxPart)
+		end,
+	}
+
+
+
+--Camera RunService
+Cache["CameraBobbing"] = RunService.RenderStepped:Connect(function(dt)
+	
+	--Normalize MoveDirection
+	local HumanoidMoveDirection = Humanoid.MoveDirection * Vector3.new(1,0,1) 
+	--Check On Move
+	local IsMove : boolean = Humanoid.MoveDirection.Magnitude > .01
+	--ZDirection right/left
+	local ZDirection = -math.round((HumanoidMoveDirection:Dot(PlayerCamera.CFrame.RightVector)))
+	
+	--Frame offset 1/60 ~ 60fps in second
+	local offset = dt/(1/60)
+	
+	--Calulate BobbingCFrame
+	BobbingCFrame = BobbingCFrame:Lerp(CFrame.Angles( 
+		
+		IsMove and math.rad(math.sin(os.clock() * BobbingMulty)/5.5) * offset,
+		IsMove and math.rad(math.cos(os.clock() * BobbingMulty)/5) * offset,
+		
+		math.rad(ZDirection * 10) * offset
+		),.05)
+	
+	PlayerCamera.CFrame *= BobbingCFrame
+end)
+
+--User Input 
+Cache["UserInputBegan"] = UserInputService.InputBegan:Connect(function(input, event)
+	
+	for _,v in pairs(KeyCodes) do
+		--Check On keycode in my dictionary
+		if input.KeyCode == v then
+			Map[v](true)
 		end
 	end
 	
-end
+end)
 
---Method on create Rock
-local function CreateRock()
-	local Rock = Instance.new("Part",workspace)
-	Rock.Size = Vector3.one *(math.random(10,25)/10)
-	Rock.Anchored = true
-	Rock.CanCollide = false
-	
-	
-	return Rock
-end
+-- User Input end
+Cache["UserInputEnded"] = UserInputService.InputEnded:Connect(function(input, event)
 
---Main Method on spawn rocks
-local function SimulationRock(_CFrame : CFrame,_time : number)
-	
-	local RockRightOffset = 5
-	
-	for i=1,60*_time do
-		
-		for x=-1,1,2 do
-			
-			local NewCFrame = _CFrame * CFrame.Angles(0,math.rad(-90),0) -- Normalize CFrame
-			
-			--RayCast
-			local cast = workspace:Raycast(NewCFrame.Position + NewCFrame.LookVector * i,Vector3.new(0,-5,0))
-			if not cast then continue end
-			--
-			
-			local Part = CreateRock() -- spawn rock
-			
-
-			
-			
-			Part.Material = cast.Material -- GetMaterial from cast instance
-			Part.Color = cast.Instance.Color -- GetColor from cast instance
-			
-			--Normalize CFrame after cast, and do random angles
-			Part.CFrame = (CFrame.new(cast.Position,cast.Position + cast.Normal) * CFrame.Angles(math.rad(90),0,0)) + NewCFrame.RightVector * (RockRightOffset * x)
-			Part.CFrame *= CFrame.Angles(math.rad(math.random(-30,30)),math.rad(math.random(-30,30)),math.rad(math.random(-30,30)))
-			--
-			
-			--Spawn Animation on Rocks
-			Part.Position -= Vector3.new(0,3,0)
-			TweenService:Create(Part,TweenInfo.new(.3,Enum.EasingStyle.Back,Enum.EasingDirection.InOut),
-				{
-					Position = Part.Position + Vector3.new(0,3,0)
-				}):Play()
-			task.delay(3,function()
-				TweenService:Create(Part,TweenInfo.new(.3,Enum.EasingStyle.Sine),
-					{
-						Size = Vector3.zero
-					}):Play()
-				task.wait(.3)
-				Part:Destroy()
-			end)
-			--
-			
+	for _,v in pairs(KeyCodes) do
+		if input.KeyCode == v then
+			Map[v](false)
 		end
-		task.wait(1/60) 
 	end
-	
-end
 
---Reset Humanoid Settings to default
-local function ResetHumanoidToDefault(Humanoid : Humanoid)
-
-	Humanoid.WalkSpeed = NormalWalkSpeed
-	Humanoid.JumpPower = NormalJumpPower
-	Humanoid.AutoRotate = true
-
-end
-
---Set humanoid settings
-local function ChangeHumanoid(Humanoid : Humanoid)
-	
-	Humanoid.AutoRotate = false
-	Humanoid.WalkSpeed = 0
-	Humanoid.JumpPower = 0
-	
-end
+end)
 
 
---Main input system
-UserInputService.InputBegan:Connect(function(input,event)
-	if (input.KeyCode ~= KeyCode) or (event) or (debounce) then return end -- Check player input
-	debounce = true -- set debounce on true
-	
-	local RootPart = Character.PrimaryPart -- Character RootPart
-	
-	--Clone some assets
-	local Blue = Assets.Blue:Clone()
-	local Red = Assets.Red:Clone()
-	local Purple = Assets.Purple:Clone()
-	-- 
-	
-	--Humanoid Setup
-	local Humanoid : Humanoid = Character:FindFirstChildOfClass("Humanoid")
-	Humanoid.UseJumpPower = true
-	ChangeHumanoid(Humanoid)
-	--
-	
-	--Spawn Blue & Red and Normalize CFrame`s
-	Blue.CFrame = RootPart.CFrame + (RootPart.CFrame.RightVector * -Rightoffset) + (RootPart.CFrame.LookVector * LookOffset)
-	Red.CFrame = ((RootPart.CFrame + RootPart.CFrame.RightVector * Rightoffset) + (RootPart.CFrame.LookVector * LookOffset)) * CFrame.Angles(0,math.pi,0)
 
-	--Set parent to workspace
-	Blue.Parent = workspace
-	--CameraShake
-	CameraModule:ShakeOnce(5,50,0,.5)
-	task.wait(1/2) -- wait for impact
-	Red.Parent = workspace
-	CameraModule:ShakeOnce(5,50,0,.5)
 
-	--Enable VFX
-	ChangeVFXStatus(Blue,true)
-	ChangeVFXStatus(Red,true)
-	--
-	
-	task.wait(1/2)
-	--Main CFrame
-	local EndCFrame = RootPart.CFrame + RootPart.CFrame.LookVector * LookOffset
-	
-	--Create TweenService for smooth anims
-	local BlueTween = TweenService:Create(Blue,TweenInfo.new(2,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),
-		{
-			CFrame = EndCFrame
-		})
-	local RedTween = TweenService:Create(Red,TweenInfo.new(2,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),
-		{
-			CFrame = EndCFrame * CFrame.Angles(0,math.pi,0)
-		})
-	
-	BlueTween:Play()
-	RedTween:Play()
-	--
-	
-	--When Tween Completed destroy Blue & Red
-	BlueTween.Completed:Once(function()
-		ChangeVFXStatus(Blue,false)
-		Blue:Destroy()
-		ChangeVFXStatus(Red,false)
-		Red:Destroy()
-	end)
 
-	
-	task.wait(2)
-	
-	--Spawn Purple 
-	Purple.CFrame = EndCFrame * CFrame.Angles(0,math.rad(90),0) -- Normalize CFrame
-	Purple.Parent = workspace
-	CameraModule:ShakeOnce(10,75,0,.5)
-	
-	--Set HUD
-	OpenEyes()
-	SetColorCorrection()
-	--
-	task.wait(1)
-	--Rock Simalutaion
-	task.spawn(SimulationRock,Purple.CFrame,2)
+--Get Joint`s
+local RootJoint : Motor6D = RootPart:WaitForChild("RootJoint")
+local Neck : Motor6D = Torso:WaitForChild("Neck")
 
-	--Start PurpleTween
-	local PurpleTween = TweenService:Create(Purple,TweenInfo.new(2,Enum.EasingStyle.Sine,Enum.EasingDirection.In),
-		{
-			CFrame = (EndCFrame  + RootPart.CFrame.LookVector * 150) * CFrame.Angles(0,math.rad(90),0)
-		})
-	PurpleTween:Play()
-	CameraModule:ShakeOnce(4,35,0,2)
+--Get ZeroJoint`s
+local ZeroJointC0 = RootJoint.C0
+local ZeroJointNeckC0 = Neck.C1
+
+
+Cache["BodyGyroSimulation"] = RunService.Heartbeat:Connect(function()
+	if (not Character) then return end
+
+	--Get Normalize MoveDirection
+	local MoveDirection = -(Humanoid.MoveDirection * Vector3.new(1,0,1))
+	--Get Front Direction
+	local Front = MoveDirection:Dot(RootPart.CFrame.LookVector) * (Humanoid.WalkSpeed/2)
+	--Get Right Direction
+	local Right = MoveDirection:Dot(RootPart.CFrame.RightVector) * (Humanoid.WalkSpeed/2)
+
+	--Clamped angle
+	local FrontAngle = math.rad(math.clamp(Front,-30,30))
+	local RightAngle = math.rad(math.clamp(Right,-10,10))
 	
-	--When PurpleTween Completed, reset all to default & destroy purple
-	PurpleTween.Completed:Once(function()
-		ChangeVFXStatus(Purple,false)
-		CloseEyes()
-		ResetSetColorCorrection()
-		Purple:Destroy()
-		
-		ResetHumanoidToDefault(Humanoid)
-		
-		debounce = false 
-	end)
-	
+	--Lerp CFrame`s
+	Neck.C1 = Neck.C1:Lerp(ZeroJointNeckC0 * CFrame.Angles(-FrontAngle,RightAngle/2,RightAngle * 3),.05)
+	RootJoint.C0 = RootJoint.C0:Lerp(ZeroJointC0 * CFrame.Angles(-FrontAngle,RightAngle/2,RightAngle * 3),.05)
+
 end)
 
 --[[
+
+Press ["X"] - for Run
+Press ["Q"] - for Rocket Spam
+Press ["V"] - for Fan of Knives
+
+
 
 | Thansk for reading |
 
@@ -301,4 +363,9 @@ Made By ->
 ░░░██║░░░██║░░██║███████╗███████╗██║░░██║░░░██║░░░██████╔╝██║░░██║
 ░░░╚═╝░░░╚═╝░░╚═╝╚══════╝╚══════╝╚═╝░░╚═╝░░░╚═╝░░░╚═════╝░╚═╝░░╚═╝
 
+
+
 ]]
+
+
+
