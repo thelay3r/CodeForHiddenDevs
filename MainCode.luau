@@ -111,6 +111,49 @@ local function PlayVFX(object : BasePart)
 
 end
 
+local function PlayAnimation(Humanoid : Humanoid)
+
+	Cache["Run"] = RunService.Heartbeat:Connect(function()
+		--Check if humanoid is moving or not
+		local IsMove : boolean = Humanoid.MoveDirection.Magnitude > .01
+
+		--if humanoid move
+		if IsMove then
+			--check on animation play
+			if not CheckOnAnimationRunning("RunAnimation") then
+				--if not then add to tracks animation track
+				Tracks["RunAnimation"] = Aniamtor:LoadAnimation(AnimationFolder["Run"])
+				--track play
+				Tracks["RunAnimation"]:Play()
+			end
+		else
+			-- if humanoid not move then stop animation
+			if CheckOnAnimationRunning("RunAnimation") then
+				Tracks["RunAnimation"]:Stop()
+			end
+		end
+
+	end)
+
+end
+
+local function StopAnimation(Humanoid : Humanoid)
+	
+	if Cache["Run"] then
+		--Clear Run connection
+		Cache["Run"]:Disconnect()
+		--chick if in cash have run animation and it running
+		if CheckOnAnimationRunning("RunAnimation") then
+			--get track
+			local track = CheckOnAnimationTrack("RunAnimation")
+			--animation stop
+			track:Stop()
+			--clear cache
+			Tracks["RunAnimation"] = nil
+		end
+	end
+	
+end
 
 --Functional map for abilities
 local Map = 
@@ -122,48 +165,14 @@ local Map =
 			if IsRunning then
 				--SetHumanoidWalkSpeed
 				Humanoid.WalkSpeed = DefaultSpeed
-				
-				--check if i have in cache "run"
-				if Cache["Run"] then
-					--Clear Run connection
-					Cache["Run"]:Disconnect()
-					--chick if in cash have run animation and it running
-					if CheckOnAnimationRunning("RunAnimation") then
-						--get track
-						local track = CheckOnAnimationTrack("RunAnimation")
-						--animation stop
-						track:Stop()
-						--clear cache
-						Tracks["RunAnimation"] = nil
-					end
-				end
+				StopAnimation(Humanoid)
 				
 			else
 				--Set Humanoid WalkSpeed
 				Humanoid.WalkSpeed = UpSpeed
-				
 				--add to cache heartBeat connection
-				Cache["Run"] = RunService.Heartbeat:Connect(function()
-					--Check if humanoid is moving or not
-					local IsMove : boolean = Humanoid.MoveDirection.Magnitude > .01
-
-					--if humanoid move
-					if IsMove then
-						--check on animation play
-						if not CheckOnAnimationRunning("RunAnimation") then
-							--if not then add to tracks animation track
-							Tracks["RunAnimation"] = Aniamtor:LoadAnimation(AnimationFolder["Run"])
-							--track play
-							Tracks["RunAnimation"]:Play()
-						end
-					else
-						-- if humanoid not move then stop animation
-						if CheckOnAnimationRunning("RunAnimation") then
-							Tracks["RunAnimation"]:Stop()
-						end
-					end
-					
-				end)
+				PlayAnimation(Humanoid)
+				
 				
 			end
 			--set Running boolean
