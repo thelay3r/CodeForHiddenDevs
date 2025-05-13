@@ -1,304 +1,254 @@
---Services
+-- USER INPUT SERVICE WHAAAAAAT
 local UserInputService = game:GetService("UserInputService")
+
+--Tween service 
 local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
 
-
---Player Components
+--WOOOOOW PLAYER
 local Player = game.Players.LocalPlayer
-local Character = Player.Character or Player.CharacterAdded:Wait()
---
+
+--character wooow
+local Character = script.Parent
+
+--wow player camera
+local Camera = workspace.CurrentCamera
 
 
-local KeyCode = Enum.KeyCode.Q -- KeyBind
+--camera shake module
+local CameraShake = require(game.ReplicatedStorage.Modules.CameraShaker)
 
-local Assets = script:WaitForChild("Assets") -- Assets Folder
+--Boolean switch ability move
+local Get: boolean = false
+--Wow its object
+local Object :Part
 
-local CameraShaker = require(script.CameraShaker) -- OpenSource ShakeModule
-local Camera = workspace.CurrentCamera -- Main Camera
-
-local debounce = false -- CoolDown on Button
-
-
-local ColorCorrection = Lighting.ColorCorrection
-
-local Rightoffset = 10 -- Offset on CFrame
-local LookOffset = 5 --  Offset on CFrame
+-- cooldown
+local Debounce = false
 
 
---Gui Components 
-local PlayerGUI = Player.PlayerGui
-local Hud = PlayerGUI.Hud
-local Eyes = Hud.Eyes
---
-
---Settings For humanoid
-local NormalWalkSpeed = 16
-local NormalJumpPower = 50
---
-
---Setup CameraShake
-local CameraModule = CameraShaker.new(Enum.RenderPriority.Camera.Value +1,function(Cframe)
-	Camera.CFrame *= Cframe
-end)
-CameraModule:Start()
---
+--rock spawn function 
+local function CreateBlocksSphereOutline(point: Vector3, 
+	info: { 
+		intensity: number, 
+		radius: { min: number, max: number }, 
+		size: { min: number, max: number }, 
+		delaytime: { min: number, max: number } }, 
+	callback)
 
 
---Change transparency 
-local function OpenEyes()
-	local _Time = 1
-	local EyesTween = TweenService:Create(Eyes,TweenInfo.new(_Time,Enum.EasingStyle.Sine),
-		{
-			BackgroundTransparency = 0
-		})
-	EyesTween:Play()
-	
-end
 
---Reset ColorCorrection to default
-local function ResetSetColorCorrection()
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = {workspace.Map}
 
-	local TweenTime = 1
-	local CorrectionTween = TweenService:Create(ColorCorrection,TweenInfo.new(TweenTime,Enum.EasingStyle.Sine)
-		,{
-			Saturation = 0;
-			TintColor = Color3.fromRGB(255, 255, 255)
-		})
-	CorrectionTween:Play()
+	local ray = workspace:Raycast(point, Vector3.new(0, -20, 0), params)
+	if not ray then Object:Destroy() Get = false Debounce = false return end
 
-end
+	local parts = {}
+	--spawn rock by angle etc
+	for angle = 0, 360, 360/info.intensity do
+
+		local smul = math.random(info.size.min*1000, info.size.max*1000)/1000
+
+		local randPos = Vector3.new(
+			math.sin(math.rad(angle))*math.random(info.radius.min, info.radius.max),
+			0,
+			math.cos(math.rad(angle))*math.random(info.radius.min, info.radius.max)
+		)
+		--instance new part
+		local part = Instance.new("Part",workspace)
+		part.Size = Vector3.new(smul, smul, smul)
+		part.CFrame = CFrame.new(ray.Position + randPos, (ray.Position - ray.Normal)) * CFrame.Angles(math.rad(90),0,0)	
+		part.Transparency = .2
+		part.Color = ray.Instance.Color
+		part.Material = ray.Material
+
+		part.Anchored = true
+
+		part.CFrame = part.CFrame + part.CFrame.UpVector * -4
+		TweenService:Create(part, TweenInfo.new(.15), { CFrame = part.CFrame + part.CFrame.UpVector * 4 }):Play()
 
 
---Set ColorCorrection
-local function SetColorCorrection()
-	
-	local TweenTime = 1
-	local CorrectionTween = TweenService:Create(ColorCorrection,TweenInfo.new(TweenTime,Enum.EasingStyle.Sine)
-		,{
-			Saturation = 1;
-			TintColor = Color3.fromRGB(233, 213, 255)
-		})
-	CorrectionTween:Play()
-	
-end
---Set transparency to background
-local function CloseEyes()
-	local _Time = 1
-	local EyesTween = TweenService:Create(Eyes,TweenInfo.new(_Time,Enum.EasingStyle.Sine),
-		{
-			BackgroundTransparency =1
-		})
-	EyesTween:Play()
+		--insert part to parts table
+		table.insert(parts, part)
+
+		task.delay(math.random(info.delaytime.min*1000, info.delaytime.max*1000)/1000, function() TweenService:Create(part, TweenInfo.new(1,Enum.EasingStyle.Sine), {Size = Vector3.zero}):Play() wait(1) part:Destroy()  end)
+
+	end
+
+	--return parts woooooow
+	return parts
 
 end
 
---Enable/Disable vfx 
-local function ChangeVFXStatus(object : BasePart,status : boolean)
-	
-	for _,v in pairs(object:GetDescendants()) do
-		if v:IsA("ParticleEmitter") then
-			v.Enabled = status
-		end
-		if v:IsA("Beam") then
-			v.Enabled = status
+
+
+-- Reading iser uiput
+UserInputService.InputBegan:Connect(function(input, event)
+	if input.KeyCode == Enum.KeyCode.Q and not event and not Debounce then
+		if Get then
+			--Player mouse
+			local Mouse = Player:GetMouse()
+			local MousePosition = Mouse.Hit.Position
+			
+			--raycast params
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Include
+			params.FilterDescendantsInstances = {workspace.Map:GetDescendants()}
+			
+			--Checked raycast
+			local raycast = workspace:Raycast(MousePosition + Vector3.new(0,2,0), Vector3.new(0, -20,0), params)
+			if not raycast then return end
+			Debounce = true
+			Get = false
+			if raycast then
+				
+				--cfg tween service 
+				local EndTween = TweenService:Create(Object, TweenInfo.new(1, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut), {Position = raycast.Position})
+				
+				EndTween:Play()
+				--delay with explosion 
+				task.delay(.6,function()
+					
+					Object.EndSound:Play()
+					
+					local EndEffect = game.ReplicatedStorage.Assets.EndEffect:Clone()
+					EndEffect.Parent = workspace
+					EndEffect.CFrame = CFrame.new(raycast.Position)
+					
+					
+					for _, v in pairs(EndEffect:GetDescendants()) do
+						if v:IsA("ParticleEmitter") then
+							v:Emit(v:GetAttribute("EmitCount"))
+						end
+					end
+					
+					--camera shake init
+					local CameraShake = CameraShake.new(Enum.RenderPriority.Camera.Value, function(shakecf)
+						Camera.CFrame *= shakecf
+					end)
+					CameraShake:Start()
+
+					CameraShake:Shake(CameraShake.Presets.BumpModded)
+
+
+					--spawn rocks
+					CreateBlocksSphereOutline(raycast.Position  + Vector3.new(0,3,0), {
+						intensity =  35, 
+						radius =  { min =  4, max = 7 }, 
+						size =  { min =  1, max = 2 }, 
+						delaytime = {min =  1, max = 3 },
+					})
+					
+				end)
+				--completed tween
+				EndTween.Completed:Connect(function()
+					
+					
+					Debounce = false
+					--last object to delet
+					local LastObject = Object
+					
+					TweenService:Create(LastObject, TweenInfo.new(.5, Enum.EasingStyle.Sine),{Transparency = 1}):Play()
+					--Emit vfx
+					for _, v in pairs(LastObject:GetDescendants()) do
+						task.spawn(function()
+							if v:IsA("Beam") then
+								for i=1, 10 do
+									v.Transparency = NumberSequence.new(i/10)
+									task.wait(0.01)
+								end
+							end
+						end)
+					end
+					--destroy object
+					task.spawn(function()
+						task.wait(2)
+						LastObject:Destroy()
+					end)
+
+				end)
+				
+			end
+			
+		else
+			--Player mouse
+			local Mouse = Player:GetMouse()
+			local MousePosition = Mouse.Hit.Position
+
+			--raycast params
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Include
+			params.FilterDescendantsInstances = {workspace:GetDescendants()}
+			--check raycast
+			
+			local raycast = workspace:Raycast(MousePosition + Vector3.new(0,2,0), Vector3.new(0, -20,0), params)
+			--check if not raycast then return
+			if not raycast then return end
+			Debounce = true
+			Get = true
+			if raycast then
+				--clone obj
+				Object = game.ReplicatedStorage.Assets.Object:Clone()
+				Object.Parent = workspace
+				Object.CFrame = CFrame.new(raycast.Position - Vector3.new(0,20,0))
+
+				--clone start vfx
+				local StartEffect = game.ReplicatedStorage.Assets.StartEffect:Clone()
+				StartEffect.Parent = Object
+				--set vfx position
+				StartEffect.CFrame = CFrame.new(raycast.Position + Vector3.new(0,2,0))
+				
+				--Emit vfx
+				for _, v in pairs(StartEffect:GetDescendants()) do
+					if v:IsA("ParticleEmitter") then
+						v:Emit(v:GetAttribute("EmitCount"))
+					end
+				end
+				
+				--camerashake init
+				local CameraShake = CameraShake.new(Enum.RenderPriority.Camera.Value, function(shakecf)
+					Camera.CFrame *= shakecf
+				end)
+				CameraShake:Start()
+				
+				CameraShake:Shake(CameraShake.Presets.BumpModded)
+				
+				--Init play sound
+				Object.StartSound:Play()
+				
+				task.delay(.1,function()
+					
+					
+				-- spawn rocks
+				CreateBlocksSphereOutline(raycast.Position  + Vector3.new(0,3,0), {
+						intensity =  35, 
+						radius =  { min =  4, max = 7 }, 
+						size =  { min =  1, max = 2 }, 
+						delaytime = {min =  1, max = 3 },
+					})
+				end)
+				
+				
+				task.wait(.1)
+				Object.CFrame *= CFrame.Angles(math.rad(75),math.rad(0), math.rad(75))
+
+				-- start tween for mov obj
+				local StartTween = TweenService:Create(Object, TweenInfo.new(.75, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = Object.Position + Vector3.new(0,30,0)})
+				StartTween:Play()
+				StartTween.Completed:Connect(function()
+					Debounce = false
+				end)
+				
+				-- rotate obj
+				while Get  do
+					Object.CFrame *= CFrame.Angles(math.rad(1),math.rad(0),math.rad(1))
+					task.wait(.01)
+				end
+				
+			end
 		end
 	end
 	
-end
-
---Method on create Rock
-local function CreateRock()
-	local Rock = Instance.new("Part",workspace)
-	Rock.Size = Vector3.one *(math.random(10,25)/10)
-	Rock.Anchored = true
-	Rock.CanCollide = false
-	
-	
-	return Rock
-end
-
---Main Method on spawn rocks
-local function SimulationRock(_CFrame : CFrame,_time : number)
-	
-	local RockRightOffset = 5
-	
-	for i=1,60*_time do
-		
-		for x=-1,1,2 do
-			
-			local NewCFrame = _CFrame * CFrame.Angles(0,math.rad(-90),0) -- Normalize CFrame
-			
-			--RayCast
-			local cast = workspace:Raycast(NewCFrame.Position + NewCFrame.LookVector * i,Vector3.new(0,-5,0))
-			if not cast then continue end
-			--
-			
-			local Part = CreateRock() -- spawn rock
-			
-
-			
-			
-			Part.Material = cast.Material -- GetMaterial from cast instance
-			Part.Color = cast.Instance.Color -- GetColor from cast instance
-			
-			--Normalize CFrame after cast, and do random angles
-			Part.CFrame = (CFrame.new(cast.Position,cast.Position + cast.Normal) * CFrame.Angles(math.rad(90),0,0)) + NewCFrame.RightVector * (RockRightOffset * x)
-			Part.CFrame *= CFrame.Angles(math.rad(math.random(-30,30)),math.rad(math.random(-30,30)),math.rad(math.random(-30,30)))
-			--
-			
-			--Spawn Animation on Rocks
-			Part.Position -= Vector3.new(0,3,0)
-			TweenService:Create(Part,TweenInfo.new(.3,Enum.EasingStyle.Back,Enum.EasingDirection.InOut),
-				{
-					Position = Part.Position + Vector3.new(0,3,0)
-				}):Play()
-			task.delay(3,function()
-				TweenService:Create(Part,TweenInfo.new(.3,Enum.EasingStyle.Sine),
-					{
-						Size = Vector3.zero
-					}):Play()
-				task.wait(.3)
-				Part:Destroy()
-			end)
-			--
-			
-		end
-		task.wait(1/60) 
-	end
-	
-end
-
---Reset Humanoid Settings to default
-local function ResetHumanoidToDefault(Humanoid : Humanoid)
-
-	Humanoid.WalkSpeed = NormalWalkSpeed
-	Humanoid.JumpPower = NormalJumpPower
-	Humanoid.AutoRotate = true
-
-end
-
---Set humanoid settings
-local function ChangeHumanoid(Humanoid : Humanoid)
-	
-	Humanoid.AutoRotate = false
-	Humanoid.WalkSpeed = 0
-	Humanoid.JumpPower = 0
-	
-end
-
-
---Main input system
-UserInputService.InputBegan:Connect(function(input,event)
-	if (input.KeyCode ~= KeyCode) or (event) or (debounce) then return end -- Check player input
-	debounce = true -- set debounce on true
-	
-	local RootPart = Character.PrimaryPart -- Character RootPart
-	
-	--Clone some assets
-	local Blue = Assets.Blue:Clone()
-	local Red = Assets.Red:Clone()
-	local Purple = Assets.Purple:Clone()
-	-- 
-	
-	--Humanoid Setup
-	local Humanoid : Humanoid = Character:FindFirstChildOfClass("Humanoid")
-	Humanoid.UseJumpPower = true
-	ChangeHumanoid(Humanoid)
-	--
-	
-	--Spawn Blue & Red and Normalize CFrame`s
-	Blue.CFrame = RootPart.CFrame + (RootPart.CFrame.RightVector * -Rightoffset) + (RootPart.CFrame.LookVector * LookOffset)
-	Red.CFrame = ((RootPart.CFrame + RootPart.CFrame.RightVector * Rightoffset) + (RootPart.CFrame.LookVector * LookOffset)) * CFrame.Angles(0,math.pi,0)
-
-	--Set parent to workspace
-	Blue.Parent = workspace
-	--CameraShake
-	CameraModule:ShakeOnce(5,50,0,.5)
-	task.wait(1/2) -- wait for impact
-	Red.Parent = workspace
-	CameraModule:ShakeOnce(5,50,0,.5)
-
-	--Enable VFX
-	ChangeVFXStatus(Blue,true)
-	ChangeVFXStatus(Red,true)
-	--
-	
-	task.wait(1/2)
-	--Main CFrame
-	local EndCFrame = RootPart.CFrame + RootPart.CFrame.LookVector * LookOffset
-	
-	--Create TweenService for smooth anims
-	local BlueTween = TweenService:Create(Blue,TweenInfo.new(2,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),
-		{
-			CFrame = EndCFrame
-		})
-	local RedTween = TweenService:Create(Red,TweenInfo.new(2,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),
-		{
-			CFrame = EndCFrame * CFrame.Angles(0,math.pi,0)
-		})
-	
-	BlueTween:Play()
-	RedTween:Play()
-	--
-	
-	--When Tween Completed destroy Blue & Red
-	BlueTween.Completed:Once(function()
-		ChangeVFXStatus(Blue,false)
-		Blue:Destroy()
-		ChangeVFXStatus(Red,false)
-		Red:Destroy()
-	end)
-
-	
-	task.wait(2)
-	
-	--Spawn Purple 
-	Purple.CFrame = EndCFrame * CFrame.Angles(0,math.rad(90),0) -- Normalize CFrame
-	Purple.Parent = workspace
-	CameraModule:ShakeOnce(10,75,0,.5)
-	
-	--Set HUD
-	OpenEyes()
-	SetColorCorrection()
-	--
-	task.wait(1)
-	--Rock Simalutaion
-	task.spawn(SimulationRock,Purple.CFrame,2)
-
-	--Start PurpleTween
-	local PurpleTween = TweenService:Create(Purple,TweenInfo.new(2,Enum.EasingStyle.Sine,Enum.EasingDirection.In),
-		{
-			CFrame = (EndCFrame  + RootPart.CFrame.LookVector * 150) * CFrame.Angles(0,math.rad(90),0)
-		})
-	PurpleTween:Play()
-	CameraModule:ShakeOnce(4,35,0,2)
-	
-	--When PurpleTween Completed, reset all to default & destroy purple
-	PurpleTween.Completed:Once(function()
-		ChangeVFXStatus(Purple,false)
-		CloseEyes()
-		ResetSetColorCorrection()
-		Purple:Destroy()
-		
-		ResetHumanoidToDefault(Humanoid)
-		
-		debounce = false 
-	end)
-	
 end)
 
---[[
-
-| Thansk for reading |
-
-Made By ->
-
-████████╗██╗░░██╗███████╗██╗░░░░░░█████╗░██╗░░░██╗██████╗░██████╗░
-╚══██╔══╝██║░░██║██╔════╝██║░░░░░██╔══██╗╚██╗░██╔╝╚════██╗██╔══██╗
-░░░██║░░░███████║█████╗░░██║░░░░░███████║░╚████╔╝░░█████╔╝██████╔╝
-░░░██║░░░██╔══██║██╔══╝░░██║░░░░░██╔══██║░░╚██╔╝░░░╚═══██╗██╔══██╗
-░░░██║░░░██║░░██║███████╗███████╗██║░░██║░░░██║░░░██████╔╝██║░░██║
-░░░╚═╝░░░╚═╝░░╚═╝╚══════╝╚══════╝╚═╝░░╚═╝░░░╚═╝░░░╚═════╝░╚═╝░░╚═╝
-
-]]
