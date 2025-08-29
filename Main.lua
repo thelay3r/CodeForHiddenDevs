@@ -62,51 +62,93 @@ local Config = {
 
 -- Player character setup
 local Player = Players.LocalPlayer
+--Wait for Character, im used default Player.Character and CharacterAdded event for evaded nil character
 local Character = Player.Character or Player.CharacterAdded:Wait()
+--[[
+	im used WaitForChild 'humanoid', because sometimes player dont have humanoid when script started 
+	because player may have have bad internet or smth
+	and script will be errored because of nil humanoid
+]]
 local Humanoid = Character:WaitForChild("Humanoid")
+--Same as above
 local RootPart = Character:WaitForChild("HumanoidRootPart") :: BasePart
+--Get player Camera from Workspace
 local PlayerCamera = Workspace.CurrentCamera
 
+--Getting player GUI
 local PlayerGUI = Player.PlayerGui
+--Wait for Vignette gui
 local Vignette = PlayerGUI:WaitForChild("Vignette")
 
+--Wait for color correction folder, for additional impact
 local ExplosionTemplate = Lighting:WaitForChild("ExplosionCC")
 
--- Stores all active event connections
+--[[
+	Stores all active event connections, to avoid memory leaks
+	below I disable all Connections when Humanoid died 
+]]
 local ActiveConnections = {}
---Counter for GUI
-local DustCount = 0
 
--- Setup raycasting parameters
+--[[
+	Store all humanoid animations, to avoid memory leaks
+	To avoid loading the animation every time, I'll simply retrieve it from the cache
+	This approach improves performance by reusing already loaded animations
+]]
+local AnimationCache = {}
+
+local DustCount = 0
+--[[
+	Counter for Gui, to avoid 'math.random' because random can give same results
+	
+	(like math.random(1,3))
+	-> 1
+	-> 3
+	-> 1
+	-> 1
+]]
+
+
+
+-- Setup raycasting parameters once, to avoid repeating the code (DRY - don't repeat yourself)
 local RayParams = RaycastParams.new()
 RayParams.FilterType = Enum.RaycastFilterType.Exclude
 RayParams.FilterDescendantsInstances = {Workspace.Ignore, Character}
 
 -- Initialize camera shake effect
+--The function gives CFrame, im multiplying Camera.CFrame by Module CFrame
 local Shaker = CameraShake.new(Enum.RenderPriority.Camera.Value+1, function(cf)
 	PlayerCamera.CFrame *= cf
 end)
+--Launch the module for camera shake
 Shaker:Start()
 
---Pre load animations
+--[[
+	Pre load animations, im use ContentProvider for preloading animations to avoide
+	Anim laging and delays when player cast spells
+]]
 ContentProvider:PreloadAsync({Anims.Cast})
 
 -- Creates randomly sized rocks for natural look
 local function CreateRandomRock(material, color)
-	--Instance new part
+	--Using Instance class for creating part
 	local rock = Instance.new("Part")
 	--Set rock parent to ignore folder
-	rock.Parent = Workspace.Ignore
-	--Get RandomSize
+	--[[
+		im getting random size for each axis, to make the setup more flexible
+		for changeing size of rock, you need to change X Y Z in config
+	]]
 	local sizeX = math.random(Config.RockSettings.MinSize, Config.RockSettings.MaxSize)/10
 	local sizeY = math.random(Config.RockSettings.MinSize, Config.RockSettings.MaxSize)/10
 	local sizeZ = math.random(Config.RockSettings.MinSize, Config.RockSettings.MaxSize)/10
-	--Set Size to rock
+	--Set Size to rock from 3x variables
 	rock.Size = Vector3.new(sizeX, sizeY, sizeZ)
+	--Set material and color for rock if it doesn`t exist then use default roblox Material
 	rock.Material = material or Enum.Material.Rock
 	rock.Color = color or Color3.new(0.5, 0.5, 0.5)
+	--Set Booleans for part
 	rock.Anchored = true
 	rock.CanCollide = false
+	rock.Parent = workspace.Ignore
 	return rock
 end
 
@@ -114,8 +156,19 @@ end
 local function CalculateTargetPosition()
 	--Get mouse position
 	local mousePos = Player:GetMouse().Hit.Position
-	--Calculate direction
-	local direction = (mousePos - RootPart.Position).Unit * Config.MaxDistance
+	--[[
+		Default roblox GetMouse it works very poorly
+		then im create custom function to get player mouse corectrly
+		To get mouse position i use this:
+	
+		set direction:  get unit from this (mouse position - RootPart.Position) * Config.MaxDistance
+		and then raycast from RootPart to that direction
+		
+		if ray hits something, return that position, 
+		otherwise return max distance away 
+		(RootPart.Position + direction(Unit))
+	]]
+	local direction = (mousePos - RootPart.Position).Unit * Config.MaxDistance 
 	local rayResult = Workspace:Raycast(RootPart.Position, direction, RayParams)
 	--If ray hits something, return that position, otherwise return max distance away
 	return rayResult and rayResult.Position or (RootPart.Position + direction)
@@ -125,31 +178,43 @@ end
 local function LaunchRocks(position, hitData, duration)
 	--Create Rock
 	local rock = CreateRandomRock(hitData.Material, hitData.Instance.Color)
-	--Set settings for it
+	--[[
+		Set Physics properties for rock
+	]]
 	rock.Position = position
 	rock.Anchored = false
 	rock.Massless = true
 
 	rock.Size /=2
 
-	-- Apply random rotation
+	--[[
+		Multiplying Cframe by random angles to make rocks rotation in different directions
+	]]
 	rock.CFrame = rock.CFrame * CFrame.Angles(
 		math.rad(math.random(-80, 80)),
 		math.rad(math.random(-80, 80)),
 		math.rad(math.random(-80, 80))
 	)
 
-	-- Add physics movement
+	--[[
+		Add BodyVelocity to rock to make it fly
+		and getting random velocity for rocks from Config
+	]]
 	local velocity = Instance.new("BodyVelocity")
 	velocity.Velocity = Vector3.new(
 		math.random(Config.RockSettings.VelocityRange.X[1], Config.RockSettings.VelocityRange.X[2]),
 		math.random(Config.RockSettings.VelocityRange.Y[1], Config.RockSettings.VelocityRange.Y[2]),
 		math.random(Config.RockSettings.VelocityRange.Z[1], Config.RockSettings.VelocityRange.Z[2])
 	)
-	--Set parent to rock
+	--[[
+		I set parent for bodyVelocity to rock after set all properties
+	
+	]]
 	velocity.Parent = rock
 
-	-- Cleanup after effect duration
+	--[[
+		Using task.delay for destroying velocity after duration
+	]]
 	task.delay(duration, function()
 		velocity:Destroy()
 	end)
@@ -159,29 +224,45 @@ end
 
 -- Creates circular crater effect at target position
 local function GenerateCrater(centerPos, rockCount, radius, lifetime)
+	-- get step from dividing 360 by rock count
 	local angleStep = 360 / rockCount
+	
+	--Start from 0 angle and rotate by step for each rock
 	for angle = 0, 360, angleStep do
+		-- set rayOrigin to centerPos + 25 studs in Y axis
 		local rayOrigin = centerPos + Vector3.new(0, 25, 0)
+		-- set rayDirection to 100 studs in Y axis
 		local rayDirection = Vector3.new(0, -100, 0)
+		-- Raycast from rayOrigin to rayDirection, if ray hits something, then create rock at hit position
 		local hit = Workspace:Raycast(rayOrigin, rayDirection, RayParams)
-		if not hit then continue end
+		if not hit then print("Returne") continue end
 
-		-- Position rocks in circle
+		--[[
+			Create rock at hit position
+			im put material and color from cast result, to make it look more beautiful
+		]]
 		local rock = CreateRandomRock(hit.Material, hit.Instance.Color)
+		--I get distance from radius and add random offset to it (randomizer)
 		local distance = math.random(radius/1.2, radius)
+		--Set rock CFrame on caluculated CFrame
 		rock.CFrame = CFrame.new(hit.Position) * CFrame.Angles(0, math.rad(angle), 0) * CFrame.new(0, 0, distance)
 
-		-- Add slight random tilt
+		--[[
+			Im adding some rotation to rock to like it some tilted	
+		]]
 		rock.CFrame = rock.CFrame * CFrame.Angles(
 			math.rad(math.random(-25, 25)),
 			math.rad(math.random(-10, 10)),
 			0
 		)
 
-		-- Launch some flying rocks
+		-- Launch fly rocks after
 		LaunchRocks(hit.Position, hit, 0.4)
 
-		-- Fade out effect after lifetime
+		--[[
+			im use delay for destroy rocks after lifetime
+			And im using TweenService to make it smooth
+		]]
 		task.delay(lifetime, function()
 			TweenService:Create(rock, TweenInfo.new(lifetime), {
 				Transparency = 1,
@@ -202,6 +283,13 @@ local function ActivateEffects(object)
 	end
 end
 
+
+--[[
+	-> CopY Sound function <-
+	
+	im using this function to clone sound from Sounds folder and play it
+	and destroy it after completed
+]]
 -- Copy Sound by name from Sounds folder
 local function CopySound(SoundName,Played: boolean)
 	--Find Sound in Sounds folder
@@ -215,7 +303,12 @@ local function CopySound(SoundName,Played: boolean)
 	if not Played then return ClonnedSound end
 	-- if Player true then we played sound and destroy it on completed
 	ClonnedSound:Play()
+	--[[
+		Why im use Once? it will run only one time and cleanup, or we have other way to place it in ActiveConnections, 
+		but thats way not readable
+	]]
 	ClonnedSound.Ended:Once(function()
+		--Destroy sound
 		ClonnedSound:Destroy()
 	end)
 end
@@ -230,14 +323,19 @@ local function CreateDust()
 	if DustCount >= 2  then
 		DustCount = 1
 	end
-	--Change Image texture to the next one
+	--Change Image texture to next one
 	Dust.Image = Dust[DustCount].Texture
 
-	--Play Tween for ChangeImage transparency to 1
+	--[[
+		Im use TweenService to make smooth transition from 0 to 1
+		also im use Once when Tween Completed to cleanup connection and reset ImageTransparency with Texture
+	]]
+	--Setup Tween 
 	local DustTween = TweenService:Create(Dust,TweenInfo.new(.7,Enum.EasingStyle.Sine),
 		{
 			ImageTransparency = 1
 		})
+	--Start Tween
 	DustTween:Play()
 	--When Tween completed reset Dust GUI
 	DustTween.Completed:Once(function()
@@ -247,7 +345,13 @@ local function CreateDust()
 	
 end
 
---Create CC
+--[[
+	Create Correction on Explosion
+	
+	im using this to make correction on explosion
+	and using TweenService to make it smooth,
+	im using Once to cleanup connection and destroy correction
+]]
 local function CreateCorrection()
 
 	--Clone CC folder
@@ -287,7 +391,12 @@ local function CreateCorrection()
 
 end
 
---Change FOV
+--[[
+	Create FOV Tween
+	
+	I use this to make smooth transition of FOV
+	and using Once to cleanup connection and create another Tween for returning to default fov
+]]
 local function ChangeFOV()
 	--Tween for smooth change Fov
 	local CameraTween = TweenService:Create(PlayerCamera,TweenInfo.new(.3,Enum.EasingStyle.Back,Enum.EasingDirection.Out),
@@ -307,14 +416,16 @@ end
 
 --Play Animantion
 local function PlayAnimation()
+	
 	--Get Animator from humanoid
 	local Animator: Animator = Humanoid:FindFirstChildOfClass("Animator")
 	--Load animation to Humanoid Animator
-	local track = Animator:LoadAnimation(Anims:FindFirstChild("Cast"))
+	local track = AnimationCache["Cast"] or Animator:LoadAnimation(Anims:FindFirstChild("Cast"))
+	AnimationCache["Cast"] = track
 	--Play animation
-	track:Play()
+	AnimationCache["Cast"]:Play()
 	--Set Looped to false if animation is looped
-	track.Looped = false
+	AnimationCache["Cast"].Looped = false
 end
 
 -- Handles the spell casting sequence
@@ -386,6 +497,16 @@ Humanoid.Died:Once(function()
 	for _,conn in pairs(ActiveConnections) do
 		conn:Disconnect()
 	end
+	for name,v: AnimationTrack in pairs(AnimationCache) do
+		v:Stop()
+		AnimationCache[name] = nil
+	end
+	
+	--[[
+		Why im use table.clear? for cleanUp tables on full without memory leak`s
+	]]
+	table.clear(ActiveConnections)
+	table.clear(AnimationCache)
 end)
 
 --[[
